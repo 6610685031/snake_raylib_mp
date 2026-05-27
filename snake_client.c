@@ -1,5 +1,9 @@
 // raylib
+#include <pthread.h>
 #include <raylib.h>
+
+// thread
+#include <bits/pthread_stack_min.h>
 
 // standard io
 #include <arpa/inet.h>
@@ -10,7 +14,21 @@
 
 #define VERYDARKGRAY (Color){25, 25, 25, 255}
 
-void create_socket_connection(int port, char host[]) {
+static void *sender_thread(void *arg) {
+  int fd = *(int *)arg;
+  int seq = 0;
+  char buf[128];
+
+  while (1) {
+    sleep(2); /* send a message every 2 seconds */
+    int n = snprintf(buf, sizeof(buf), "current direction: %d\n", seq);
+    if (send(fd, buf, n, 0) < 0)
+      break;
+  }
+  return NULL;
+}
+
+void create_socket_connection(int port, char host[], int *curDir) {
   int fd = socket(AF_INET, SOCK_STREAM, 0);
 
   struct sockaddr_in addr = {
@@ -21,12 +39,15 @@ void create_socket_connection(int port, char host[]) {
 
   if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
     perror("connect");
-    // if error then exit game
     exit(0);
   }
   printf("[client] connected to %s:%d\n", host, port);
 
-  char buf[128];
+  pthread_t tid;
+  pthread_create(&tid, NULL, sender_thread, &fd);
+  pthread_detach(tid);
+
+  char buf[512];
   ssize_t n;
   while ((n = recv(fd, buf, sizeof(buf) - 1, 0)) > 0) {
     buf[n] = '\0';
@@ -36,6 +57,7 @@ void create_socket_connection(int port, char host[]) {
   puts("[client] disconnected");
   close(fd);
 }
+
 int main(void) {
   // game width x height (in this case by default 64x64)
   const int gameWidth = 64;
@@ -78,7 +100,7 @@ int main(void) {
   while (!WindowShouldClose()) {
 
     // create socket connection to port
-    create_socket_connection(5050, "127.0.0.1");
+    create_socket_connection(8080, "127.0.0.1", &snakeDirection);
 
     // if left or right (on horizontal line)
     if (snakeDirection == 0 || snakeDirection == 1) {
