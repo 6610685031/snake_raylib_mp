@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 199309L
+
 // raylib
 #include <pthread.h>
 #include <raylib.h>
@@ -35,12 +37,18 @@ struct sendPacket {
 };
 struct sendPacket sendPacket; // sendPacket
 
+// nanosleep helper
+static void sleep_ms(long ms) {
+  struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L};
+  nanosleep(&ts, NULL);
+}
+
 /* thread stuffs*/
 static void *sender_thread(void *arg) {
   int fd = *(int *)arg;
   while (1) {
-    // send direction struct to the server
-    sleep(1);
+    // send direction struct to the server (~15 Hz, matching server tick rate)
+    sleep_ms(66);
     if (send(fd, (char *)&sendPacket, sizeof(sendPacket), 0) < 0)
       break;
   }
@@ -113,7 +121,7 @@ static void *renderer_thread() {
     // convert score to string to output the score
     char score_str[20];
     char score_an_str[20] = "SCORE: ";
-    snprintf(score_str, sizeof(score_str), "%d", sendPacket.snakeDirection);
+    snprintf(score_str, sizeof(score_str), "%d", gamePacket.score);
     strcat(score_an_str, score_str);
 
     DrawText(score_an_str, fontHeight / 2, fontHeight / 6, 20, RAYWHITE);
