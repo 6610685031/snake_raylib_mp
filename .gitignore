@@ -1,0 +1,12 @@
+# Compiled binaries
+snake
+snake_client
+snake_server
+
+# Object files
+*.o
+
+# Compiler/IDE files
+.cache/
+.clangd/
+compile_commands.json
