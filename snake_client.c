@@ -20,7 +20,7 @@
 
 /* data shared between threads*/
 
-struct DataPacket {
+struct gamePacket {
   int score;
   int appleAmount;
   int appleXarr[100];
@@ -30,20 +30,16 @@ struct DataPacket {
   int snakeTailYarr[100];
 };
 
-struct DataPacket gP; // gamePacket
+struct gamePacket gP; // gamePacket
 
 // snake direction
 int snakeDirection = 0;
 
 static void *sender_thread(void *arg) {
   int fd = *(int *)arg;
-  int seq = 0;
-  char buf[128];
 
   while (1) {
-    sleep(2); /* send a message every 2 seconds */
-    int n = snprintf(buf, sizeof(buf), "current direction: %d\n", seq);
-    if (send(fd, buf, n, 0) < 0)
+    if (send(fd, (void *)&snakeDirection, sizeof(snakeDirection), 0) < 0)
       break;
   }
   return NULL;
@@ -146,16 +142,15 @@ int main(void) {
   }
   printf("[client] connected to %s:%d\n", HOST, PORT);
 
-  // create 2 threads
-  pthread_t threads[2];
+  pthread_t renderer_tid, sender_tid;
 
-  // create the renderer/reciever thread (raylib)
-  pthread_create(&threads[1], NULL, renderer_thread, NULL);
-  pthread_detach(threads[0]);
+  // create the renderer thread (raylib)
+  pthread_create(&renderer_tid, NULL, renderer_thread, NULL);
+  pthread_detach(renderer_tid);
 
   // create the sender thread
-  pthread_create(&threads[2], NULL, sender_thread, &fd);
-  pthread_detach(threads[1]);
+  pthread_create(&sender_tid, NULL, sender_thread, &fd);
+  pthread_detach(sender_tid);
 
   ssize_t n;
   while ((n = recv(fd, (char *)&gP, sizeof(gP), 0)) > 0) {

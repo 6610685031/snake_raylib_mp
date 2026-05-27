@@ -48,7 +48,8 @@ int main(void) {
   /* accept one client */
   struct sockaddr_in client_addr;
   socklen_t client_len = sizeof(client_addr);
-  int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+  int client_fd =
+      accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
   if (client_fd < 0) {
     perror("accept");
     return 1;
@@ -58,6 +59,11 @@ int main(void) {
   /* send zeroed DataPacket every tick */
   struct DataPacket packet;
   memset(&packet, 0, sizeof(packet));
+
+  packet.appleXarr[0] = 20;
+  packet.appleYarr[0] = 20;
+
+  packet.appleAmount = 1;
 
   while (1) {
     long start = now_ms();
