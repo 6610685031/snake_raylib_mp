@@ -19,7 +19,6 @@
 #define PORT 8080
 
 /* data shared between threads*/
-
 struct gamePacket {
   int score;
   int appleAmount;
@@ -29,17 +28,20 @@ struct gamePacket {
   int snakeTailXarr[100];
   int snakeTailYarr[100];
 };
+struct gamePacket gamePacket; // gamePacket
 
-struct gamePacket gP; // gamePacket
+struct sendPacket {
+  int snakeDirection;
+};
+struct sendPacket sendPacket; // sendPacket
 
-// snake direction
-int snakeDirection = 0;
-
+/* thread stuffs*/
 static void *sender_thread(void *arg) {
   int fd = *(int *)arg;
-
   while (1) {
-    if (send(fd, (void *)&snakeDirection, sizeof(snakeDirection), 0) < 0)
+    // send direction struct to the server
+    sleep(1);
+    if (send(fd, (char *)&sendPacket, sizeof(sendPacket), 0) < 0)
       break;
   }
   return NULL;
@@ -50,10 +52,10 @@ static void *renderer_thread() {
   const int gameWidth = 64;
   const int gameHeight = 64;
 
-  // leave space for font
+  // leave sendPacketace for font
   const int fontHeight = 30;
 
-  // actual display width x height (will be scaled up)
+  // actual disendPacketlay width x height (will be scaled up)
   const int screenWidth = 512;
   const int screenHeight = 512 + fontHeight;
 
@@ -68,17 +70,17 @@ static void *renderer_thread() {
   while (!WindowShouldClose()) {
 
     // if left or right (on horizontal line)
-    if (snakeDirection == 0 || snakeDirection == 1) {
+    if (sendPacket.snakeDirection == 0 || sendPacket.snakeDirection == 1) {
       if (IsKeyDown(KEY_UP))
-        snakeDirection = 2;
+        sendPacket.snakeDirection = 2;
       if (IsKeyDown(KEY_DOWN))
-        snakeDirection = 3;
+        sendPacket.snakeDirection = 3;
     } else {
       // if up or down (on vertical line)
       if (IsKeyDown(KEY_LEFT))
-        snakeDirection = 0;
+        sendPacket.snakeDirection = 0;
       if (IsKeyDown(KEY_RIGHT))
-        snakeDirection = 1;
+        sendPacket.snakeDirection = 1;
     }
 
     // game canvas draw
@@ -86,11 +88,11 @@ static void *renderer_thread() {
     DrawRectangle(0, 0, gameWidth, gameHeight, BLUE);
 
     // draw snake from snake tail arrays
-    for (int i = 0; i < gP.snakeLength; i++) {
-      DrawPixel(gP.snakeTailXarr[i], gP.snakeTailYarr[i], RED);
+    for (int i = 0; i < gamePacket.snakeLength; i++) {
+      DrawPixel(gamePacket.snakeTailXarr[i], gamePacket.snakeTailYarr[i], RED);
     }
-    for (int i = 0; i < gP.appleAmount; i++) {
-      DrawPixel(gP.appleXarr[i], gP.appleYarr[i], YELLOW);
+    for (int i = 0; i < gamePacket.appleAmount; i++) {
+      DrawPixel(gamePacket.appleXarr[i], gamePacket.appleYarr[i], YELLOW);
     }
 
     EndTextureMode();
@@ -101,7 +103,7 @@ static void *renderer_thread() {
     ClearBackground(VERYDARKGRAY);
     Rectangle sourceRec = {0.0f, 0.0f, (float)target.texture.width,
                            (float)-target.texture.height};
-    // make space for font
+    // make sendPacketace for font
     Rectangle destRec = {0.0f, 0.0f, (float)(screenWidth),
                          (float)(screenHeight - fontHeight)};
     Vector2 origin = {0.0f, (float)-fontHeight};
@@ -111,7 +113,7 @@ static void *renderer_thread() {
     // convert score to string to output the score
     char score_str[20];
     char score_an_str[20] = "SCORE: ";
-    snprintf(score_str, sizeof(score_str), "%d", gP.score);
+    snprintf(score_str, sizeof(score_str), "%d", sendPacket.snakeDirection);
     strcat(score_an_str, score_str);
 
     DrawText(score_an_str, fontHeight / 2, fontHeight / 6, 20, RAYWHITE);
@@ -128,6 +130,7 @@ static void *renderer_thread() {
 }
 
 int main(void) {
+  // create socket and connect to specified host, port
   int fd = socket(AF_INET, SOCK_STREAM, 0);
 
   struct sockaddr_in addr = {
@@ -153,7 +156,11 @@ int main(void) {
   pthread_detach(sender_tid);
 
   ssize_t n;
-  while ((n = recv(fd, (char *)&gP, sizeof(gP), 0)) > 0) {
+  // recieving gamePacket data from the server and put in inside gamePacket
+  // struct
+  while ((n = recv(fd, (char *)&gamePacket, sizeof(gamePacket), 0)) > 0) {
+    // this will update the already existing gamePacket struct to match the data
+    // from the server
   }
 
   puts("[client] disconnected");
