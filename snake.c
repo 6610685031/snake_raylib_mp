@@ -32,6 +32,26 @@ void append(int array[], int *size, int value) {
     (*size)++;
 }
 
+int array_pop_at(int array[], int *size, int index) {
+    if (index < 0 || index >= *size) {
+        // fix your shits lol
+        printf("error: index out of bounds\n");
+        exit(0);
+    }
+
+    int popped_value = array[index];
+
+    // shift elements left to fill the gap
+    for (int i = index; i < *size - 1; i++) {
+        array[i] = array[i + 1];
+    }
+
+    // decrease size
+    (*size)--;
+
+    return popped_value;
+}
+
 void initApplePosition(int (*appleX)[], int (*appleY)[], int amount) {
   // rng
   srand(time(NULL));
@@ -106,7 +126,7 @@ int main(void)
     int snakeSpeed = DEFAULT_SNAKE_SPEED;
 
     initSnakePosition(&snakePositionX, &snakePositionY, &snakeTailXarr, &snakeTailYarr, snakeLength);
-    initApplePosition(&appleXarr, &appleYarr, 10);
+    initApplePosition(&appleXarr, &appleYarr, appleAmount);
 
     while (!WindowShouldClose())
     {
@@ -130,12 +150,33 @@ int main(void)
       // apple collision detection
       for(int i = 0; i < appleAmount; i++) {
         if(appleXarr[i] == snakePositionX && appleYarr[i] == snakePositionY) {
+          // pop that apple from array and deduct appleAmount
+          array_pop_at(appleXarr, &appleAmount, i);
 
-          // DO SHITS
-          // CLOSE APP FOR NOW
+          // pop workaround
+          //
+          // we don't want array_pop_at to decrease the appleAmount 2 times for both X and Y
+          // only one time per both X and Y
+          // so we add appleAmount back as a hacky workaround
+          appleAmount += 1;
+          array_pop_at(appleYarr, &appleAmount, i);
+
+          // increase snake length and score
+          snakeLength += 1;
+          score += 1;
+        }
+      }
+
+      // tail collision check
+      // START FROM INDEX 1 because skip the current POSITION
+      // SO IT WON'T KILL US INSTANTLY
+      for(int i = 1; i < snakeLength; i++) {
+        if(snakeTailXarr[i] == snakePositionX && snakeTailYarr[i] == snakePositionY) {
+          // Game over
           exit(0);
         }
       }
+
       // game canvas draw
       BeginTextureMode(target);
 
