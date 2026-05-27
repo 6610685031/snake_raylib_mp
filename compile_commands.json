@@ -1,0 +1,17 @@
+[
+  {
+    "directory": "/home/krentiz/Desktop/snake",
+    "command": "/usr/bin/gcc -Wall -Wextra -std=c99 snake.c -o snake -lraylib -lGL -lm -lpthread -ldl -lrt -lX11",
+    "file": "/home/krentiz/Desktop/snake/snake.c"
+  },
+  {
+    "directory": "/home/krentiz/Desktop/snake",
+    "command": "/usr/bin/gcc -Wall -Wextra -std=c99 snake_client.c -o snake_client -lraylib -lGL -lm -lpthread -ldl -lrt -lX11",
+    "file": "/home/krentiz/Desktop/snake/snake_client.c"
+  },
+  {
+    "directory": "/home/krentiz/Desktop/snake",
+    "command": "/usr/bin/gcc -Wall -Wextra -std=c99 snake_server.c -o snake_server -lpthread -lrt",
+    "file": "/home/krentiz/Desktop/snake/snake_server.c"
+  }
+]
