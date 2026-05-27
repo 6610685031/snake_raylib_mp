@@ -11,9 +11,6 @@
 
 #define VERYDARKGRAY (Color){ 25, 25, 25, 255 }
 
-#define DEFAULT_SNAKE_SPEED 1
-#define DEFAULT_DISPLAY_SCALE 1.75
-
 //
 //
 // ARRAY SHITS
@@ -57,14 +54,14 @@ int array_pop_at(int array[], int *size, int index) {
 //
 //
 
-void initApplePosition(int (*appleX)[], int (*appleY)[], int amount) {
+void initApplePosition(int (*appleX)[], int (*appleY)[], int width, int height, int amount) {
   // rng
   srand(time(NULL));
 
   // 63 = max game height, width
   for (int i = 0; i < amount; i++) {
-    (*appleX)[i] = (rand() % 63) + 1;
-    (*appleY)[i] = (rand() % 63) + 1;
+    (*appleX)[i] = (rand() % width) + 1;
+    (*appleY)[i] = (rand() % height) + 1;
   }
 }
 
@@ -90,13 +87,19 @@ void moveSnake(int *curPosX, int *curPosY, int (*tailX)[], int (*tailY)[], int s
 
 int main(void)
 {
-    // display and window settings
-    const int gameWidth = 128;
-    const int gameHeight = 128;
+    // game width x height (in this case by default 64x64)
+    const int gameWidth = 64;
+    const int gameHeight = 64;
 
-    const int screenWidth = 600;
-    const int screenHeight = 600;
+    // leave space for font
+    const int fontHeight = 30;
 
+    // actual display width x height (will be scaled up)
+    const int screenWidth = 512;
+    const int screenHeight = 512 + fontHeight;
+    
+
+    // windows
     InitWindow(screenWidth, screenHeight, "Basically A Snake Game");
     SetTargetFPS(15);
 
@@ -120,18 +123,18 @@ int main(void)
     int snakeTailYarr[100];
 
     // snake position
-    int snakePositionX = gameWidth / 2 / DEFAULT_DISPLAY_SCALE;
-    int snakePositionY = gameHeight / 2 / DEFAULT_DISPLAY_SCALE;
+    int snakePositionX = gameWidth / 2;
+    int snakePositionY = gameHeight / 2;
 
     // current direction of snake: 0 = left, 1 = right, 2 = up, 3 = down
     int snakeDirection = 0;
     // int previousDirection;
 
     // current snake speed
-    int snakeSpeed = DEFAULT_SNAKE_SPEED;
+    int snakeSpeed = 1;
 
     initSnakePosition(&snakePositionX, &snakePositionY, &snakeTailXarr, &snakeTailYarr, snakeLength);
-    initApplePosition(&appleXarr, &appleYarr, appleAmount);
+    initApplePosition(&appleXarr, &appleYarr, gameWidth, gameHeight, appleAmount);
 
     // game loop
     while (!WindowShouldClose())
@@ -183,7 +186,8 @@ int main(void)
         }
       }
 
-      if(snakePositionX > 63 || snakePositionY > 63) {
+      // X > 63, Y > 63
+      if(snakePositionX > (gameWidth - 1) || snakePositionY > (gameHeight - 1)) {
         exit(0);
       }
 
@@ -195,7 +199,7 @@ int main(void)
       BeginTextureMode(target);
 
         // ClearBackground(BLUE);
-        DrawRectangle(0, 0, 64, 64, BLUE);
+        DrawRectangle(0, 0, gameWidth, gameHeight, BLUE);
 
         // draw snake from snake tail arrays
         for(int i = 0; i < snakeLength; i++) {
@@ -212,8 +216,9 @@ int main(void)
 
         ClearBackground(VERYDARKGRAY);
         Rectangle sourceRec = { 0.0f, 0.0f, (float) target.texture.width, (float) - target.texture.height };
-        Rectangle destRec = { 0.0f, 0.0f, (float) (screenWidth * DEFAULT_DISPLAY_SCALE), (float) (screenHeight * DEFAULT_DISPLAY_SCALE)};
-        Vector2 origin = { -36.0f, -36.0f };
+        // make space for font
+        Rectangle destRec = { 0.0f, 0.0f, (float) (screenWidth), (float) (screenHeight - fontHeight)};
+        Vector2 origin = { 0.0f, (float) - fontHeight };
             
         DrawTexturePro(target.texture, sourceRec, destRec, origin, 0.0f, WHITE);
 
@@ -223,7 +228,7 @@ int main(void)
         snprintf(score_str, sizeof(score_str), "%d", score);
         strcat(score_an_str, score_str);
 
-        DrawText(score_an_str, 36.0f, 12, 20, RAYWHITE);
+        DrawText(score_an_str, fontHeight / 2, fontHeight / 6, 20, RAYWHITE);
 
       EndDrawing();
     }
