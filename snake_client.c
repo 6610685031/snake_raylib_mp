@@ -72,7 +72,12 @@ static void *sender_thread(void *arg) {
   return NULL;
 }
 
-static void *renderer_thread() {
+static void *renderer_thread(void *arg) {
+  // void cast to arg because it's unused
+  // GCC wouldn't compile if i didn't insert "void *arg" to *renderer_thread
+  // GCC is very annoying sometimes
+  (void)arg;
+
   // game width x height
   // by default it's 64x64, could be changed
   // the dimension should be 1:1 so that it's easier to calculate (not really)
@@ -90,7 +95,7 @@ static void *renderer_thread() {
   Color snakeColors[2] = {RED, GREEN};
 
   // windows
-  InitWindow(screenWidth, screenHeight, "Basically A Snake Game");
+  InitWindow(screenWidth, screenHeight, "basically a snake game");
 
   // we try to match the game fps with the the tick rate value
   // it won't be fully 100% in sync but it should work well enough
@@ -118,8 +123,9 @@ static void *renderer_thread() {
 
     // game canvas draw
     BeginTextureMode(target);
-    // forcing linter to beautify
-    if (true) {
+
+    // draw if the both players joined
+    if (gamePacket.playerCount == 2) {
       DrawRectangle(0, 0, gameWidth, gameHeight, BLUE);
 
       // draw both players snakes
@@ -135,22 +141,23 @@ static void *renderer_thread() {
       for (int i = 0; i < gamePacket.appleAmount; i++) {
         DrawPixel(gamePacket.appleXarr[i], gamePacket.appleYarr[i], YELLOW);
       }
-
-      EndTextureMode();
     }
+
+    EndTextureMode();
 
     // window canvas draw
     BeginDrawing();
-    // forcing linter to beautify
-    if (true) {
 
-      ClearBackground(BLACK);
-      Rectangle sourceRec = {0.0f, 0.0f, (float)target.texture.width,
-                             (float)-target.texture.height};
-      // make space for font
-      Rectangle destRec = {0.0f, 0.0f, (float)(screenWidth),
-                           (float)(screenHeight - fontHeight)};
-      Vector2 origin = {0.0f, (float)-fontHeight};
+    ClearBackground(BLACK);
+    Rectangle sourceRec = {0.0f, 0.0f, (float)target.texture.width,
+                           (float)-target.texture.height};
+    // make space for font
+    Rectangle destRec = {0.0f, 0.0f, (float)(screenWidth),
+                         (float)(screenHeight - fontHeight)};
+    Vector2 origin = {0.0f, (float)-fontHeight};
+
+    // draw if the both players joined
+    if (gamePacket.playerCount == 2) {
       DrawTexturePro(target.texture, sourceRec, destRec, origin, 0.0f, WHITE);
 
       // display both players scores
@@ -158,9 +165,14 @@ static void *renderer_thread() {
       snprintf(score_str, sizeof(score_str), "P1: %d   P2: %d",
                gamePacket.score[0], gamePacket.score[1]);
       DrawText(score_str, fontHeight / 2, fontHeight / 6, 20, RAYWHITE);
+    } else {
 
-      EndDrawing();
+      // display text for waiting
+      DrawText("waiting for players to join...", fontHeight / 2, fontHeight / 6,
+               20, RAYWHITE);
     }
+
+    EndDrawing();
   }
 
   UnloadRenderTexture(target);

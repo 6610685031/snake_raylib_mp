@@ -140,7 +140,7 @@ void initApplePosition(int (*appleX)[], int (*appleY)[], int width, int height,
 }
 
 void initSnake(int p) {
-  snakeLength[p] = 3;
+  snakeLength[p] = 5;
   snakeSpeed[p] = 1;
 
   if (p == 0) {
@@ -333,7 +333,7 @@ int main(int argc, char *argv[]) {
   if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0)
     return 1;
   listen(server_fd, 8);
-  printf("[server] listening on :%d  tick=%d Hz  players=2 (waiting...)\n",
+  printf("[server] listening on :%d, tick=%d Hz, waiting for players...\n",
          PORT, TICK_RATE);
 
   pthread_t tid;
@@ -434,15 +434,14 @@ int main(int argc, char *argv[]) {
 
       // game boundary check
       //
-      // X > GAME_WIDTH, Y > GAME_HEIGHT and X or Y is more than 0
-      if (snakePosX[p] > (GAME_WIDTH - 1) || snakePosY[p] > (GAME_HEIGHT - 1)) {
-        if (snakePosX[p] < 0 || snakePosY[p] < 0) {
-          // log
-          printf("[server] p%d game over (hit wall); score=%d\n", p, score[p]);
+      // X > GAME_WIDTH or Y > GAME_HEIGHT or X or Y is more than 0
+      if (snakePosX[p] > (GAME_WIDTH - 1) || snakePosY[p] > (GAME_HEIGHT - 1) ||
+          snakePosX[p] < 0 || snakePosY[p] < 0) {
+        // log
+        printf("[server] p%d game over (hit wall); score=%d\n", p, score[p]);
 
-          score[p] = 0;
-          initSnake(p);
-        }
+        score[p] = 0;
+        initSnake(p);
       }
 
       // snake to snake violence check
