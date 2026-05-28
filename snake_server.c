@@ -8,10 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define MAX_CLIENTS 2
 #define TICK_RATE 15
-#define TICK_MS (1000 / TICK_RATE)
-
 #define GAME_WIDTH 64
 #define GAME_HEIGHT 64
 
@@ -43,9 +40,6 @@ struct sendPacket {
 // init them to -1; if connected then
 // it should be 0 or 1 respectively
 static int client_fd[2] = {-1, -1};
-// if accepted the connection then client_active
-// for each players should be set to 1
-static int client_active[2] = {0, 0};
 // the game should start if client_count is 2
 static int client_count = 0;
 
@@ -71,7 +65,7 @@ static int score[2];
 
 // check if 2 players both connected or not
 // 0 = no, 1 = yes
-static volatile int game_running = 0;
+static int game_running = 0;
 
 /*
 
@@ -243,7 +237,7 @@ static void *accept_thread(void *arg) {
     pthread_mutex_unlock(&clients_mutex);
 
     // if both players join then exit the loop
-    if (count >= MAX_CLIENTS) {
+    if (count >= 2) {
       sleep_ms(100);
       continue;
     }
@@ -258,7 +252,7 @@ static void *accept_thread(void *arg) {
     // editing client count data
     // locking mutex
     pthread_mutex_lock(&clients_mutex);
-    if (client_count < MAX_CLIENTS) {
+    if (client_count < 2) {
       int assigned_id = client_count; // 0 for first, 1 for second
 
       // send the player ID back
@@ -269,7 +263,6 @@ static void *accept_thread(void *arg) {
       }
 
       client_fd[assigned_id] = fd;
-      client_active[assigned_id] = 1;
       client_count++;
 
       int *pid = malloc(sizeof(int));
@@ -282,7 +275,7 @@ static void *accept_thread(void *arg) {
              inet_ntoa(addr.sin_addr), fd, assigned_id, client_count);
 
       // if we now have 2 players, start the game
-      if (client_count == MAX_CLIENTS) {
+      if (client_count == 2) {
         game_running = 1;
         printf("[server] both players connected — game starting!\n");
       }
@@ -353,150 +346,169 @@ int main(int argc, char *argv[]) {
                     appleAmount);
   printf("[server] game initialized: %d apples\n", appleAmount);
 
-  /*
-
-    if both players aren't connected yet we wait until they do
-    the accept_thread will handle this so we spam sleep counter before so
-
-    */
+  // if both players aren't connected yet we wait until they do
+  // the accept_thread will handle this so we spam sleep counter before so
   while (!game_running) {
     sleep_ms(50);
   }
 
-  // starting tick count now
-  long start = now_ms();
+  // we assume that both players are ready so we gonna start the game now
+  //
+  // we loop forever until something goes wrong (or user ctrl+c the server)
+  while (1) {
 
-  pthread_mutex_lock(&game_mutex);
+    // starting tick count now
+    long start = now_ms();
 
-  // loop for both players
-  for (int p = 0; p < 2; p++) {
+    pthread_mutex_lock(&game_mutex);
 
-    // movement limiter
-    int inputDir = inputDirection[p];
-    if (snakeDirection[p] == 0 || snakeDirection[p] == 1) {
-      // currently horizontal — only allow vertical change
-      if (inputDir == 2)
-        snakeDirection[p] = 2;
-      if (inputDir == 3)
-        snakeDirection[p] = 3;
-    } else {
-      // currently vertical — only allow horizontal change
-      if (inputDir == 0)
-        snakeDirection[p] = 0;
-      if (inputDir == 1)
-        snakeDirection[p] = 1;
-    }
+    // loop for both players
+    for (int p = 0; p < 2; p++) {
 
-    moveSnake(&snakePosX[p], &snakePosY[p], &snakeTailXarr[p],
-              &snakeTailYarr[p], snakeSpeed[p], snakeDirection[p],
-              snakeLength[p]);
-
-    // apple collision detection
-    for (int i = 0; i < appleAmount; i++) {
-      if (appleXarr[i] == snakePosX[p] && appleYarr[i] == snakePosY[p]) {
-        // pop that apple from array and deduct appleAmount
-        array_pop_at(appleXarr, &appleAmount, i);
-
-        // pop workaround (same as snake.c)
-        appleAmount += 1;
-        array_pop_at(appleYarr, &appleAmount, i);
-
-        // increase snake length and score
-        snakeLength[p] += 1;
-        score[p] += 1;
+      // movement limiter
+      int inputDir = inputDirection[p];
+      if (snakeDirection[p] == 0 || snakeDirection[p] == 1) {
+        // currently horizontal — only allow vertical change
+        if (inputDir == 2)
+          snakeDirection[p] = 2;
+        if (inputDir == 3)
+          snakeDirection[p] = 3;
+      } else {
+        // currently vertical — only allow horizontal change
+        if (inputDir == 0)
+          snakeDirection[p] = 0;
+        if (inputDir == 1)
+          snakeDirection[p] = 1;
       }
-    }
 
-    // tail collision check
-    // START FROM INDEX 1 because skip the current POSITION
-    // SO IT WON'T KILL US INSTANTLY
-    int self_hit = 0;
-    for (int i = 1; i < snakeLength[p]; i++) {
-      if (snakeTailXarr[p][i] == snakePosX[p] &&
-          snakeTailYarr[p][i] == snakePosY[p]) {
-        self_hit = 1;
-        break;
+      moveSnake(&snakePosX[p], &snakePosY[p], &snakeTailXarr[p],
+                &snakeTailYarr[p], snakeSpeed[p], snakeDirection[p],
+                snakeLength[p]);
+
+      // apple collision detection
+      for (int i = 0; i < appleAmount; i++) {
+        if (appleXarr[i] == snakePosX[p] && appleYarr[i] == snakePosY[p]) {
+          // pop that apple from array and deduct appleAmount
+          array_pop_at(appleXarr, &appleAmount, i);
+
+          // pop workaround
+          //
+          // we don't want array_pop_at to decrease the appleAmount 2 times for
+          // both X and Y only one time per both X and Y so we add appleAmount
+          // back as a hacky workaround
+          appleAmount += 1;
+          array_pop_at(appleYarr, &appleAmount, i);
+
+          // increase snake length and score
+          snakeLength[p] += 1;
+          score[p] += 1;
+        }
       }
-    }
 
-    // boundary collision check
-    int boundary_hit =
-        (snakePosX[p] > (GAME_WIDTH - 1) || snakePosY[p] > (GAME_HEIGHT - 1) ||
-         snakePosX[p] < 0 || snakePosY[p] < 0);
+      // tail collision check
+      //
+      // WE START FROM INDEX 1 because INDEX 0 is the current POSITION
+      // SO IF WE CHECK INDEX 0 THEN WE INSTADEAD
+      for (int i = 1; i < snakeLength[p]; i++) {
 
-    /* cross-collision: did this snake hit the OTHER snake's body? */
-    int cross_hit = 0;
-    int other = (p == 0) ? 1 : 0;
-    for (int i = 0; i < snakeLength[other]; i++) {
-      if (snakeTailXarr[other][i] == snakePosX[p] &&
-          snakeTailYarr[other][i] == snakePosY[p]) {
-        cross_hit = 1;
-        break;
+        if (snakeTailXarr[p][i] == snakePosX[p] &&
+            snakeTailYarr[p][i] == snakePosY[p]) {
+
+          // log
+          printf("[server] p%d game over (tail hit); score=%d\n", p, score[p]);
+
+          // reset the score and reinit since player died
+          score[p] = 0;
+          initSnake(p);
+
+          // end the loop search
+          break;
+        }
       }
+
+      // game boundary check
+      //
+      // X > GAME_WIDTH, Y > GAME_HEIGHT and X or Y is more than 0
+      if (snakePosX[p] > (GAME_WIDTH - 1) || snakePosY[p] > (GAME_HEIGHT - 1)) {
+        if (snakePosX[p] < 0 || snakePosY[p] < 0) {
+          // log
+          printf("[server] p%d game over (hit wall); score=%d\n", p, score[p]);
+
+          score[p] = 0;
+          initSnake(p);
+        }
+      }
+
+      // snake to snake violence check
+      //
+      // if the snake hit each other then also flag it
+      // we want to make your life harder
+      int other = (p == 0) ? 1 : 0;
+      for (int i = 0; i < snakeLength[other]; i++) {
+        if (snakeTailXarr[other][i] == snakePosX[p] &&
+            snakeTailYarr[other][i] == snakePosY[p]) {
+
+          // log
+          printf("[server] p%d game over (hit each other); score=%d\n", p,
+                 score[p]);
+
+          score[p] = 0;
+          initSnake(p);
+
+          break;
+        }
+      }
+    } // finished death condition check
+
+    // proceed to access the gamePacket
+    // locking mutex
+    pthread_mutex_unlock(&game_mutex);
+
+    struct gamePacket packet;
+    // zeroed out the packet to prevent accessing wrong memory while doing so
+    // tbh not needed
+    memset(&packet, 0, sizeof(packet));
+
+    pthread_mutex_lock(&game_mutex);
+
+    packet.playerCount = 2;
+    packet.appleAmount = appleAmount;
+
+    memcpy(packet.appleXarr, appleXarr, sizeof(int) * appleAmount);
+    memcpy(packet.appleYarr, appleYarr, sizeof(int) * appleAmount);
+
+    for (int p = 0; p < 2; p++) {
+      packet.score[p] = score[p];
+      packet.snakeLength[p] = snakeLength[p];
+      memcpy(packet.snakeTailXarr[p], snakeTailXarr[p],
+             sizeof(int) * snakeLength[p]);
+      memcpy(packet.snakeTailYarr[p], snakeTailYarr[p],
+             sizeof(int) * snakeLength[p]);
     }
 
-    if (self_hit || boundary_hit || cross_hit) {
-      const char *reason =
-          self_hit ? "self-collision"
-                   : (boundary_hit ? "out of bounds" : "hit other snake");
-      printf("[server] player %d game over! %s. score=%d\n", p, reason,
-             score[p]);
-      // reset score and reinit position
-      score[p] = 0;
-      initSnake(p);
+    pthread_mutex_unlock(&game_mutex);
+
+    // sending the gamePacket back to both clients now
+    // locking mutex
+    pthread_mutex_lock(&clients_mutex);
+
+    // send packet to both players
+    for (int i = 0; i < 2; i++) {
+      send(client_fd[i], &packet, sizeof(packet), MSG_NOSIGNAL);
     }
+
+    pthread_mutex_unlock(&clients_mutex);
+
+    long remaining = (1000 / TICK_RATE) - (now_ms() - start);
+    if (remaining > 0)
+      sleep_ms(remaining);
   }
 
-  pthread_mutex_unlock(&game_mutex);
+  // the reader_thread calls exit(1) when a player disconnects
+  // so this is just a fallback
 
-  /*
-
-    sending the gamePacket back to both clients now
-
-    */
-  struct gamePacket packet;
-  memset(&packet, 0, sizeof(packet));
-
-  pthread_mutex_lock(&game_mutex);
-
-  packet.playerCount = 2;
-  packet.appleAmount = appleAmount;
-
-  memcpy(packet.appleXarr, appleXarr, sizeof(int) * appleAmount);
-  memcpy(packet.appleYarr, appleYarr, sizeof(int) * appleAmount);
-
-  for (int p = 0; p < 2; p++) {
-    packet.score[p] = score[p];
-    packet.snakeLength[p] = snakeLength[p];
-    memcpy(packet.snakeTailXarr[p], snakeTailXarr[p],
-           sizeof(int) * snakeLength[p]);
-    memcpy(packet.snakeTailYarr[p], snakeTailYarr[p],
-           sizeof(int) * snakeLength[p]);
-  }
-
-  pthread_mutex_unlock(&game_mutex);
-
-  pthread_mutex_lock(&clients_mutex);
-  for (int i = 0; i < 2; i++) {
-    if (!client_active[i])
-      continue;
-
-    if (send(client_fd[i], &packet, sizeof(packet), MSG_NOSIGNAL) < 0) {
-      client_active[i] = 0;
-      // reader thread will close fd
-    }
-  }
-  pthread_mutex_unlock(&clients_mutex);
-
-  long remaining = TICK_MS - (now_ms() - start);
-  if (remaining > 0)
-    sleep_ms(remaining);
-
-  // if somehow the game still run because of sender_thread doesn't close the
-  // server we tell the server to close and then return 0
-
-  // idk this should have happened
-  puts("[client] disconnected");
   close(server_fd);
   return 0;
+
+  //
 }

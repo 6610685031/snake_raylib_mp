@@ -1,16 +1,15 @@
 #define _POSIX_C_SOURCE 199309L
 
 #include <arpa/inet.h>
-#include <bits/pthread_stack_min.h>
 #include <pthread.h>
 #include <raylib.h>
 #include <stdio.h>
 #include <stdlib.h>
-// #include <string.h>
 #include <unistd.h>
 
-#define VERYDARKGRAY (Color){25, 25, 25, 255}
-
+#define TICK_RATE 15
+#define GAME_WIDTH 64
+#define GAME_HEIGHT 64
 /*
 
   data shared between threads
@@ -58,10 +57,13 @@ static void sleep_ms(long ms) {
 static void *sender_thread(void *arg) {
   int fd = *(int *)arg;
   while (1) {
-    // send direction struct to the server (about 15 times per sec, 15hz)
+    // send direction struct to the server
+    // (by default about 15 times per sec or 15hz, you can change it though)
     // worst-effort way to sync tick rate with server
     // doesn't really works at times but it's good enough
-    sleep_ms(66);
+
+    // calculate tick sleep time from tick rate
+    sleep_ms(1000 / TICK_RATE);
     if (send(fd, (char *)&sendPacket, sizeof(sendPacket), 0) < 0)
       break;
   }
@@ -71,9 +73,11 @@ static void *sender_thread(void *arg) {
 }
 
 static void *renderer_thread() {
-  // game width x height (in this case by default 64x64)
-  const int gameWidth = 64;
-  const int gameHeight = 64;
+  // game width x height
+  // by default it's 64x64, could be changed
+  // the dimension should be 1:1 so that it's easier to calculate (not really)
+  const int gameWidth = GAME_WIDTH;
+  const int gameHeight = GAME_HEIGHT;
 
   // leave space for font
   const int fontHeight = 30;
@@ -87,7 +91,10 @@ static void *renderer_thread() {
 
   // windows
   InitWindow(screenWidth, screenHeight, "Basically A Snake Game");
-  SetTargetFPS(15);
+
+  // we try to match the game fps with the the tick rate value
+  // it won't be fully 100% in sync but it should work well enough
+  SetTargetFPS(TICK_RATE);
 
   // texture2D
   RenderTexture2D target = LoadRenderTexture(gameWidth, gameHeight);
@@ -137,7 +144,7 @@ static void *renderer_thread() {
     // forcing linter to beautify
     if (true) {
 
-      ClearBackground(VERYDARKGRAY);
+      ClearBackground(BLACK);
       Rectangle sourceRec = {0.0f, 0.0f, (float)target.texture.width,
                              (float)-target.texture.height};
       // make space for font
@@ -223,8 +230,8 @@ int main(int argc, char *argv[]) {
   pthread_create(&sender_tid, NULL, sender_thread, &fd);
   pthread_detach(sender_tid);
 
-  // recieving gamePacket data from the server and put in inside gamePacket
-  // struct
+  // recieving gamePacket data from the server
+  // and put in inside gamePacket struct
   while ((n = recv(fd, (char *)&gamePacket, sizeof(gamePacket), 0)) > 0) {
     // this will update the already existing gamePacket struct to match the data
     // from the server
