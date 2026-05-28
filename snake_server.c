@@ -9,115 +9,102 @@
 #include <unistd.h>
 
 #define PORT 8080
-#define MAX_CLIENTS 32
+#define MAX_CLIENTS 2
 #define TICK_RATE 15
 #define TICK_MS (1000 / TICK_RATE)
 
-/* ── game constants ──────────────────────────────────────────────── */
 #define GAME_WIDTH 64
 #define GAME_HEIGHT 64
 #define NUM_PLAYERS 2
 
-/* ── wire protocol ───────────────────────────────────────────────── */
-struct DataPacket {
+/*
+
+  data shared between threads
+
+*/
+struct gamePacket {
+  // lock player count to 2
+  // don't want it to be hard to implement
   int playerCount;
-  int score[NUM_PLAYERS];
+  int score[2];
   int appleAmount;
   int appleXarr[100];
   int appleYarr[100];
-  int snakeLength[NUM_PLAYERS];
-  int snakeTailXarr[NUM_PLAYERS][100];
-  int snakeTailYarr[NUM_PLAYERS][100];
+  int snakeLength[2];
+  int snakeTailXarr[2][100];
+  int snakeTailYarr[2][100];
 };
+
+struct gamePacket gamePacket; // gamePacket
 
 struct sendPacket {
   int snakeDirection;
 };
 
-/* ── per-player game state ───────────────────────────────────────── */
-typedef struct {
-  int score;
-  int snakeLength;
-  int snakeTailXarr[100];
-  int snakeTailYarr[100];
-  int posX, posY;
-  int direction;
-  int inputDirection; /* written by reader_thread */
-  int speed;
-  int alive; /* 1 = player slot occupied by a connected client */
-} PlayerState;
-
-static PlayerState players[NUM_PLAYERS];
 static pthread_mutex_t players_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-/* ── per-client state ─────────────────────────────────────────────── */
-typedef struct {
-  int fd;
-  int active;
-  int player_id; /* 0 or 1 for players, -1 for spectators */
-  pthread_mutex_t msg_mutex;
-} ClientState;
-
-static ClientState clients[MAX_CLIENTS];
-static int client_count = 0;
 static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* ── shared apple state ──────────────────────────────────────────── */
+/* static initializer data */
 static int appleAmount = 10;
 static int appleXarr[100];
 static int appleYarr[100];
 
-/* ── helpers ──────────────────────────────────────────────────────── */
+/*
+
+  precise timing modules
+
+*/
+
+// sleep (precise)
 static void sleep_ms(long ms) {
   struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L};
   nanosleep(&ts, NULL);
 }
-
+// get current time (precise)
 static long now_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
-//
-// ARRAY HELPERS (ported from snake.c)
-//
+/*
+
+  array helpers
+
+*/
+
+// array shift
 void insert(int array[], int *size, int value) {
-  // array shift
   for (int i = *size; i > 0; i--) {
     array[i] = array[i - 1];
   }
-  // insert value into first index
   array[0] = value;
-
-  // increment the active element counter
   (*size)++;
 }
 
+// append at index end
 void append(int array[], int *size, int value) {
-  // insert the value at the current end index
   array[*size] = value;
   (*size)++;
 }
 
+// pop array at certain index
 void array_pop_at(int array[], int *size, int index) {
   if (index < 0 || index >= *size) {
     printf("error: index out of bounds\n");
-    return; /* don't exit the server */
+    exit(1);
   }
-
-  // shift elements left to fill the gap
   for (int i = index; i < *size - 1; i++) {
     array[i] = array[i + 1];
   }
-
-  // decrease size
   (*size)--;
 }
 
-//
-// GAME INIT HELPERS (ported from snake.c)
-//
+/*
+
+  position init
+
+*/
 void initApplePosition(int (*appleX)[], int (*appleY)[], int width, int height,
                        int amount) {
   for (int i = 0; i < amount; i++) {
@@ -151,39 +138,18 @@ void moveSnake(int *curPosX, int *curPosY, int (*tailX)[], int (*tailY)[],
   insert(*tailY, &length, *curPosY);
 }
 
-/* ── initialize a single player's state ──────────────────────────── */
-static void initPlayer(int id) {
-  PlayerState *p = &players[id];
-  p->score = 0;
-  p->snakeLength = 5;
-  p->speed = 1;
-
-  if (id == 0) {
-    p->posX = GAME_WIDTH / 3;
-    p->posY = GAME_HEIGHT / 2;
-    p->direction = 1;      /* facing right */
-    p->inputDirection = 1;
-  } else {
-    p->posX = 2 * GAME_WIDTH / 3;
-    p->posY = GAME_HEIGHT / 2;
-    p->direction = 0;      /* facing left */
-    p->inputDirection = 0;
-  }
-
-  initSnakePosition(&p->posX, &p->posY, &p->snakeTailXarr, &p->snakeTailYarr,
-                    p->snakeLength);
-}
-
-/* ── per-client reader thread ─────────────────────────────────────── */
+/* thread stuffs */
 static void *reader_thread(void *arg) {
-  ClientState *c = (ClientState *)arg;
+  int fd = *(int *)arg;
   struct sendPacket sP;
   ssize_t n;
 
-  while ((n = recv(c->fd, (char *)&sP, sizeof(sP), 0)) > 0) {
-    if (c->player_id >= 0 && c->player_id < NUM_PLAYERS) {
+  while ((n = recv(fd, (char *)&sP, sizeof(sP), 0)) > 0) {
+    if (c->player_id >= 0 && c->player_id < 2) {
       pthread_mutex_lock(&players_mutex);
-      players[c->player_id].inputDirection = sP.snakeDirection;
+
+      gamePacket[0].inputDirection = sP.snakeDirection;
+
       pthread_mutex_unlock(&players_mutex);
     }
 
@@ -191,21 +157,10 @@ static void *reader_thread(void *arg) {
            sP.snakeDirection);
   }
 
-  /* client disconnected — mark inactive */
-  printf("[server] fd=%d (player %d) reader exiting\n", c->fd, c->player_id);
-
-  if (c->player_id >= 0 && c->player_id < NUM_PLAYERS) {
-    pthread_mutex_lock(&players_mutex);
-    players[c->player_id].alive = 0;
-    pthread_mutex_unlock(&players_mutex);
-  }
-
-  c->active = 0;
-  close(c->fd);
+  close(fd);
   return NULL;
 }
 
-/* ── accept thread ────────────────────────────────────────────────── */
 static void *accept_thread(void *arg) {
   int server_fd = *(int *)arg;
   struct sockaddr_in addr;
@@ -218,26 +173,14 @@ static void *accept_thread(void *arg) {
       continue;
     }
 
-    /* assign a player slot if one is free */
-    int assigned_player = -1; /* -1 = spectator */
-
-    pthread_mutex_lock(&players_mutex);
-    for (int i = 0; i < NUM_PLAYERS; i++) {
-      if (!players[i].alive) {
-        assigned_player = i;
-        players[i].alive = 1;
-        initPlayer(i);
-        break;
-      }
-    }
-    pthread_mutex_unlock(&players_mutex);
-
-    /* send the player ID as a handshake (int, -1 for spectator) */
-    if (send(fd, &assigned_player, sizeof(assigned_player), MSG_NOSIGNAL) < 0) {
+    int assinged_playerID = 1;
+    // send the player ID back //
+    if (send(fd, &assinged_playerID, sizeof(assinged_playerID), MSG_NOSIGNAL) <
+        0) {
       close(fd);
-      if (assigned_player >= 0) {
+      if (assinged_playerID >= 0) {
         pthread_mutex_lock(&players_mutex);
-        players[assigned_player].alive = 0;
+        players[assinged_playerID].alive = 0;
         pthread_mutex_unlock(&players_mutex);
       }
       continue;
@@ -288,14 +231,14 @@ int main(void) {
     return 1;
   listen(server_fd, 8);
   printf("[server] listening on :%d  tick=%d Hz  players=%d\n", PORT, TICK_RATE,
-         NUM_PLAYERS);
+         2);
 
   pthread_t tid;
   pthread_create(&tid, NULL, accept_thread, &server_fd);
   pthread_detach(tid);
 
   /* ── game state init ───────────────────────────────────────────── */
-  for (int i = 0; i < NUM_PLAYERS; i++) {
+  for (int i = 0; i < 2; i++) {
     initPlayer(i);
     players[i].alive = 0; /* no one connected yet */
   }
@@ -312,7 +255,7 @@ int main(void) {
     pthread_mutex_lock(&players_mutex);
 
     /* process each player */
-    for (int p = 0; p < NUM_PLAYERS; p++) {
+    for (int p = 0; p < 2; p++) {
       PlayerState *ps = &players[p];
       if (!ps->alive)
         continue;
@@ -353,7 +296,7 @@ int main(void) {
         }
       }
 
-      /* self-collision check */
+      // tail collision check
       // START FROM INDEX 1 because skip the current POSITION
       // SO IT WON'T KILL US INSTANTLY
       int self_hit = 0;
@@ -366,9 +309,9 @@ int main(void) {
       }
 
       /* boundary collision check */
-      int boundary_hit = (ps->posX > (GAME_WIDTH - 1) ||
-                          ps->posY > (GAME_HEIGHT - 1) || ps->posX < 0 ||
-                          ps->posY < 0);
+      int boundary_hit =
+          (ps->posX > (GAME_WIDTH - 1) || ps->posY > (GAME_HEIGHT - 1) ||
+           ps->posX < 0 || ps->posY < 0);
 
       /* cross-collision: did this snake hit the OTHER snake's body? */
       int cross_hit = 0;

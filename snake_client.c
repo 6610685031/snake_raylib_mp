@@ -1,36 +1,28 @@
 #define _POSIX_C_SOURCE 199309L
 
-// raylib
+#include <arpa/inet.h>
+#include <bits/pthread_stack_min.h>
 #include <pthread.h>
 #include <raylib.h>
-
-// thread
-#include <bits/pthread_stack_min.h>
-
-// standard io
-#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+// #include <string.h>
 #include <unistd.h>
 
-// color
 #define VERYDARKGRAY (Color){25, 25, 25, 255}
-// host, port
-#define HOST "127.0.0.1"
-#define PORT 8080
-#define NUM_PLAYERS 2
 
 /* data shared between threads */
 struct gamePacket {
+  // lock player count to 2
+  // don't want it to be hard to implement
   int playerCount;
-  int score[NUM_PLAYERS];
+  int score[2];
   int appleAmount;
   int appleXarr[100];
   int appleYarr[100];
-  int snakeLength[NUM_PLAYERS];
-  int snakeTailXarr[NUM_PLAYERS][100];
-  int snakeTailYarr[NUM_PLAYERS][100];
+  int snakeLength[2];
+  int snakeTailXarr[2][100];
+  int snakeTailYarr[2][100];
 };
 struct gamePacket gamePacket; // gamePacket
 
@@ -39,10 +31,10 @@ struct sendPacket {
 };
 struct sendPacket sendPacket; // sendPacket
 
-/* player ID assigned by server (-1 = spectator) */
-static int myPlayerId = -1;
+/* static initializer data */
+static int playerId; // playerId
 
-// nanosleep helper
+/* nanosleep for precise sleep */
 static void sleep_ms(long ms) {
   struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L};
   nanosleep(&ts, NULL);
@@ -52,11 +44,15 @@ static void sleep_ms(long ms) {
 static void *sender_thread(void *arg) {
   int fd = *(int *)arg;
   while (1) {
-    // send direction struct to the server (~15 Hz, matching server tick rate)
+    // send direction struct to the server (about 15 times per sec, 15hz)
+    // worst-effort way to sync tick rate with server
+    // doesn't really works at times but it's good enough
     sleep_ms(66);
     if (send(fd, (char *)&sendPacket, sizeof(sendPacket), 0) < 0)
       break;
   }
+
+  close(fd);
   return NULL;
 }
 
@@ -73,7 +69,7 @@ static void *renderer_thread() {
   const int screenHeight = 512 + fontHeight;
 
   // snake colors: player 0 = RED, player 1 = GREEN
-  Color snakeColors[NUM_PLAYERS] = {RED, GREEN};
+  Color snakeColors[2] = {RED, GREEN};
 
   // windows
   InitWindow(screenWidth, screenHeight, "Basically A Snake Game");
@@ -101,68 +97,72 @@ static void *renderer_thread() {
 
     // game canvas draw
     BeginTextureMode(target);
-    DrawRectangle(0, 0, gameWidth, gameHeight, BLUE);
+    // forcing linter to beautify
+    if (true) {
+      DrawRectangle(0, 0, gameWidth, gameHeight, BLUE);
 
-    // draw all players' snakes
-    for (int p = 0; p < NUM_PLAYERS; p++) {
-      for (int i = 0; i < gamePacket.snakeLength[p]; i++) {
-        DrawPixel(gamePacket.snakeTailXarr[p][i],
-                  gamePacket.snakeTailYarr[p][i], snakeColors[p]);
+      // draw both players snakes
+      for (int player = 0; player < 2; player++) {
+        // loop player 1, 2
+        for (int i = 0; i < gamePacket.snakeLength[player]; i++) {
+          DrawPixel(gamePacket.snakeTailXarr[player][i],
+                    gamePacket.snakeTailYarr[player][i], snakeColors[player]);
+        }
       }
-    }
 
-    // draw apples
-    for (int i = 0; i < gamePacket.appleAmount; i++) {
-      DrawPixel(gamePacket.appleXarr[i], gamePacket.appleYarr[i], YELLOW);
-    }
+      // draw apples
+      for (int i = 0; i < gamePacket.appleAmount; i++) {
+        DrawPixel(gamePacket.appleXarr[i], gamePacket.appleYarr[i], YELLOW);
+      }
 
-    EndTextureMode();
+      EndTextureMode();
+    }
 
     // window canvas draw
     BeginDrawing();
+    // forcing linter to beautify
+    if (true) {
 
-    ClearBackground(VERYDARKGRAY);
-    Rectangle sourceRec = {0.0f, 0.0f, (float)target.texture.width,
-                           (float)-target.texture.height};
-    // make space for font
-    Rectangle destRec = {0.0f, 0.0f, (float)(screenWidth),
-                         (float)(screenHeight - fontHeight)};
-    Vector2 origin = {0.0f, (float)-fontHeight};
+      ClearBackground(VERYDARKGRAY);
+      Rectangle sourceRec = {0.0f, 0.0f, (float)target.texture.width,
+                             (float)-target.texture.height};
+      // make space for font
+      Rectangle destRec = {0.0f, 0.0f, (float)(screenWidth),
+                           (float)(screenHeight - fontHeight)};
+      Vector2 origin = {0.0f, (float)-fontHeight};
+      DrawTexturePro(target.texture, sourceRec, destRec, origin, 0.0f, WHITE);
 
-    DrawTexturePro(target.texture, sourceRec, destRec, origin, 0.0f, WHITE);
+      // display both players scores
+      char score_str[64];
+      snprintf(score_str, sizeof(score_str), "P1: %d   P2: %d",
+               gamePacket.score[0], gamePacket.score[1]);
+      DrawText(score_str, fontHeight / 2, fontHeight / 6, 20, RAYWHITE);
 
-    // display both players' scores
-    char score_str[64];
-    snprintf(score_str, sizeof(score_str), "P1: %d   P2: %d",
-             gamePacket.score[0], gamePacket.score[1]);
-
-    DrawText(score_str, fontHeight / 2, fontHeight / 6, 20, RAYWHITE);
-
-    // show own player ID on the right side
-    if (myPlayerId >= 0) {
-      char id_str[32];
-      snprintf(id_str, sizeof(id_str), "YOU: P%d", myPlayerId + 1);
-      int textWidth = MeasureText(id_str, 20);
-      DrawText(id_str, screenWidth - textWidth - 10, fontHeight / 6, 20,
-               snakeColors[myPlayerId]);
-    } else {
-      int textWidth = MeasureText("SPECTATOR", 20);
-      DrawText("SPECTATOR", screenWidth - textWidth - 10, fontHeight / 6, 20,
-               GRAY);
+      EndDrawing();
     }
-
-    EndDrawing();
   }
 
   UnloadRenderTexture(target);
   CloseWindow();
-
   exit(0);
 
   return NULL;
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
+  // argument check
+  if (argc != 3) {
+    // argv[0] = file name
+    // argv[1] = server ip
+    // argv[2] = port
+    printf("usage: %s <server-ip> <port>\n", argv[0]);
+    return 1;
+  }
+
+  // set ip and port
+  char *HOST = argv[1];
+  int PORT = atoi(argv[2]);
+
   // create socket and connect to specified host, port
   int fd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -178,21 +178,21 @@ int main(void) {
   }
   printf("[client] connected to %s:%d\n", HOST, PORT);
 
-  /* receive player ID handshake from server */
-  ssize_t n = recv(fd, (char *)&myPlayerId, sizeof(myPlayerId), 0);
+  // receive player id from server
+  ssize_t n = recv(fd, (char *)&playerId, sizeof(playerId), 0);
   if (n <= 0) {
     puts("[client] failed to receive player ID");
     close(fd);
     return 1;
   }
-  printf("[client] assigned player ID: %d (%s)\n", myPlayerId,
-         myPlayerId >= 0 ? (myPlayerId == 0 ? "P1" : "P2") : "spectator");
+  printf("[client] assigned player ID: %d", playerId);
 
-  /* set initial direction based on player ID */
-  if (myPlayerId == 0)
-    sendPacket.snakeDirection = 1; /* P1 starts facing right */
-  else if (myPlayerId == 1)
-    sendPacket.snakeDirection = 0; /* P2 starts facing left */
+  // set direction based on player id
+  // player 0 = right, player 1 = left
+  if (playerId == 0)
+    sendPacket.snakeDirection = 1;
+  else if (playerId == 1)
+    sendPacket.snakeDirection = 0;
 
   pthread_t renderer_tid, sender_tid;
 
