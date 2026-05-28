@@ -47,7 +47,11 @@ static int client_count = 0;
 static pthread_mutex_t game_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* static initializer data */
+/*
+
+  static initializer data
+
+  */
 static int appleAmount = 10;
 static int appleXarr[100];
 static int appleYarr[100];
@@ -56,6 +60,8 @@ static int appleYarr[100];
 static int snakePosX[2];
 static int snakePosY[2];
 static int snakeDirection[2];
+// seperate inputDirection from snakeDirection
+// so that when the player attempted bad movement then it could be detected
 static int inputDirection[2];
 static int snakeSpeed[2];
 static int snakeLength[2];
