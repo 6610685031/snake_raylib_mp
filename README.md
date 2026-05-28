@@ -1,3 +1,12 @@
+# Requirements
+You need to be running LINUX to run this game since it uses POSIX thread implementations (pthread).
+
+You will also need RayLib Library to be able to run and compile the app.
+
+Follow the instructions in this link to install RayLib on your Linux.
+
+https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux
+
 # GCC
 
 ```
