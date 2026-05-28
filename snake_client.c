@@ -11,7 +11,11 @@
 
 #define VERYDARKGRAY (Color){25, 25, 25, 255}
 
-/* data shared between threads */
+/*
+
+  data shared between threads
+
+  */
 struct gamePacket {
   // lock player count to 2
   // don't want it to be hard to implement
@@ -34,13 +38,23 @@ struct sendPacket sendPacket; // sendPacket
 /* static initializer data */
 static int playerId; // playerId
 
-/* nanosleep for precise sleep */
+/*
+
+  precise timing modules
+
+*/
+
+// sleep (precise)
 static void sleep_ms(long ms) {
   struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L};
   nanosleep(&ts, NULL);
 }
 
-/* thread stuffs*/
+/*
+
+  thread stuffs
+
+*/
 static void *sender_thread(void *arg) {
   int fd = *(int *)arg;
   while (1) {
@@ -149,6 +163,11 @@ static void *renderer_thread() {
   return NULL;
 }
 
+/*
+
+  main client
+
+*/
 int main(int argc, char *argv[]) {
   // argument check
   if (argc != 3) {
